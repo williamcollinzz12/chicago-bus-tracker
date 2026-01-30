@@ -10,7 +10,7 @@ A retro-styled real-time bus tracker for Chicago's CTA system.
 - Works as a progressive web app (PWA)
 
 ## Usage
-Visit: https://yourusername.github.io/cta-bus-tracker
+Visit: https://williamcollinzz12.github.io/cta-bus-tracker
 
 Add to your iPhone home screen for app-like experience.
 

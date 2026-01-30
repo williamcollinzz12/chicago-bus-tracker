@@ -1,0 +1,2086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#3d2f1f">
+    <title>CTA BUS TRACKER</title>
+
+    <!-- Clean Retro Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Roboto+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        /* ============================================
+           RESET & UNIFIED COLOR PALETTE
+           ============================================ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            /* UNIFIED PALETTE - Warm browns + accents */
+            --bg-primary: #3d2f1f;          /* Deep warm brown - main background */
+            --bg-secondary: #2d2218;        /* Darker brown - cards/sections */
+            --bg-tertiary: #4a3a28;         /* Lighter brown - hover states */
+
+            /* CTA Brand */
+            --cta-green: #006747;           /* Forest green - headers */
+            --cta-green-dark: #004d35;
+
+            /* Accent Colors */
+            --gold: #d4a534;                /* Yellow/gold - ALL numbers/times */
+            --gold-dim: rgba(212, 165, 52, 0.7);
+
+            /* Text Colors */
+            --text-primary: #f4ead5;        /* Cream - primary text */
+            --text-secondary: #c4b8a4;      /* Muted cream - secondary */
+            --text-muted: #8a7d6d;          /* Brown-gray - labels */
+
+            /* Status Colors */
+            --status-good: #4a9f5c;         /* Green - on time */
+            --status-warn: #d4782c;         /* Orange - delayed */
+            --status-bad: #c44d24;          /* Burnt orange - alerts */
+
+            /* Fonts */
+            --font-display: 'Barlow Condensed', sans-serif;
+            --font-mono: 'Roboto Mono', monospace;
+            --font-body: 'Inter', sans-serif;
+        }
+
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            /* Subtle grain texture */
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+        }
+
+        /* ============================================
+           RESPONSIVE LAYOUT
+           ============================================ */
+        .app-container {
+            min-height: 100vh;
+        }
+
+        /* Mobile: stacked layout */
+        .main-layout {
+            display: flex;
+            flex-direction: column;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 12px;
+            gap: 16px;
+        }
+
+        .info-column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .map-column {
+            display: none; /* Hidden by default, shown when toggled on mobile */
+        }
+
+        .map-column.visible {
+            display: block;
+        }
+
+        /* Desktop: side-by-side layout */
+        @media (min-width: 768px) {
+            .main-layout {
+                flex-direction: row;
+                padding: 20px;
+                height: 100vh;
+                overflow: hidden;
+            }
+
+            .info-column {
+                flex: 0 0 420px;
+                max-width: 420px;
+                overflow-y: auto;
+                padding-right: 10px;
+            }
+
+            .map-column {
+                display: block !important;
+                flex: 1;
+                min-width: 0;
+            }
+
+            .map-toggle {
+                display: none !important;
+            }
+
+            .map-wrapper {
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+            }
+
+            #map {
+                flex: 1;
+                min-height: 400px;
+            }
+        }
+
+        /* ============================================
+           NOTIFICATION BANNER
+           ============================================ */
+        .notification-banner {
+            background: var(--status-warn);
+            color: var(--text-primary);
+            padding: 10px 14px;
+            font-size: 12px;
+            font-weight: 500;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 6px;
+        }
+
+        .notification-banner button {
+            background: var(--text-primary);
+            color: var(--status-warn);
+            border: none;
+            padding: 5px 12px;
+            font-family: var(--font-display);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .notification-banner .dismiss {
+            background: transparent;
+            color: var(--text-primary);
+            padding: 5px 10px;
+            margin-left: 8px;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .notification-banner.hidden { display: none; }
+
+        /* ============================================
+           HEADER SIGN - CTA Green
+           ============================================ */
+        .header-sign {
+            background: var(--cta-green);
+            border-radius: 8px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .route-badge {
+            background: var(--gold);
+            padding: 10px 16px;
+            border-radius: 6px;
+            min-width: 70px;
+            text-align: center;
+        }
+
+        .route-number {
+            font-family: var(--font-display);
+            font-size: 44px;
+            font-weight: 800;
+            color: var(--bg-primary);
+            line-height: 1;
+        }
+
+        .route-info {
+            flex: 1;
+        }
+
+        .route-name {
+            font-family: var(--font-display);
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stop-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+            flex-wrap: wrap;
+        }
+
+        .direction-badge {
+            background: var(--status-warn);
+            color: var(--text-primary);
+            padding: 3px 8px;
+            font-family: var(--font-display);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            border-radius: 3px;
+        }
+
+        .stop-name {
+            font-size: 13px;
+            color: rgba(255,255,255,0.85);
+        }
+
+        .settings-btn {
+            background: rgba(255,255,255,0.15);
+            border: none;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .settings-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
+
+        .settings-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* ============================================
+           SYSTEM STATUS
+           ============================================ */
+        .system-status {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            text-align: center;
+            padding: 6px 12px;
+            border-radius: 4px;
+            background: var(--bg-secondary);
+            color: var(--text-muted);
+        }
+
+        .system-status.online {
+            color: var(--status-good);
+        }
+
+        .system-status.offline {
+            color: var(--status-bad);
+        }
+
+        /* ============================================
+           COUNTDOWN DISPLAY - Brown background, Gold numbers
+           ============================================ */
+        .countdown-card {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 24px 20px 20px;
+            border: 1px solid var(--bg-tertiary);
+        }
+
+        .display-label {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .countdown-row {
+            display: flex;
+            justify-content: center;
+            align-items: baseline;
+            gap: 8px;
+            padding: 12px 0;
+        }
+
+        .countdown-time {
+            font-family: var(--font-display);
+            font-size: 96px;
+            font-weight: 800;
+            color: var(--gold);
+            line-height: 1;
+            letter-spacing: -2px;
+        }
+
+        .countdown-time.updating {
+            animation: countUpdate 0.25s ease-out;
+        }
+
+        @keyframes countUpdate {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .countdown-unit {
+            font-family: var(--font-display);
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--gold-dim);
+            text-transform: uppercase;
+        }
+
+        /* Status row */
+        .status-row {
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--bg-tertiary);
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-light {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--bg-tertiary);
+        }
+
+        .status-light.on-time { background: var(--status-good); }
+        .status-light.delayed { background: var(--status-warn); }
+
+        .status-label {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .status-label.active {
+            color: var(--text-secondary);
+        }
+
+        /* Destination bar */
+        .destination-bar {
+            background: var(--bg-tertiary);
+            margin: 20px -20px -20px;
+            padding: 12px 20px;
+            border-radius: 0 0 8px 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .dest-label {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .dest-value {
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Loading state */
+        .loading-state {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .loading-text {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .loading-text::after {
+            content: '';
+            animation: dots 1.5s infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+
+        /* ============================================
+           UPCOMING BUSES - Consistent colors
+           ============================================ */
+        .panel {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--bg-tertiary);
+        }
+
+        .panel-header {
+            background: var(--cta-green);
+            padding: 12px 16px;
+        }
+
+        .panel-title {
+            font-family: var(--font-display);
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .panel-body {
+            padding: 12px;
+        }
+
+        .bus-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .bus-item {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 12px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.15s;
+            cursor: pointer;
+        }
+
+        .bus-item:hover {
+            transform: translateX(3px);
+        }
+
+        .bus-item.updating {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .bus-info {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .bus-destination {
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+        }
+
+        .bus-meta {
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .bus-id {
+            font-family: var(--font-mono);
+            font-weight: 500;
+            background: var(--cta-green);
+            color: var(--text-primary);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+
+        .bus-delayed {
+            color: var(--status-warn);
+            font-weight: 600;
+        }
+
+        .bus-eta {
+            text-align: right;
+        }
+
+        /* GOLD numbers - consistent with hero */
+        .eta-value {
+            font-family: var(--font-display);
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--gold);
+            line-height: 1;
+        }
+
+        .eta-unit {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .no-buses {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-muted);
+        }
+
+        /* ============================================
+           MAP SECTION
+           ============================================ */
+        .map-toggle {
+            width: 100%;
+            background: var(--cta-green);
+            border: none;
+            border-radius: 6px;
+            padding: 14px 20px;
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: background 0.2s;
+        }
+
+        .map-toggle:hover {
+            background: var(--cta-green-dark);
+        }
+
+        .map-toggle.active {
+            background: var(--bg-tertiary);
+        }
+
+        .map-wrapper {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid var(--bg-tertiary);
+        }
+
+        .map-header {
+            background: var(--cta-green);
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .map-title {
+            font-family: var(--font-display);
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .map-legend {
+            display: flex;
+            gap: 14px;
+            font-size: 10px;
+            color: rgba(255,255,255,0.8);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.current-stop { background: var(--status-warn); }
+        .legend-dot.other-stop { background: var(--text-muted); }
+        .legend-dot.bus { background: var(--gold); }
+
+        #map {
+            width: 100%;
+            height: 350px;
+        }
+
+        @media (min-width: 768px) {
+            #map {
+                height: 100%;
+                min-height: 500px;
+            }
+        }
+
+        /* Map marker styles */
+        .marker-current-stop {
+            background: var(--status-warn);
+            border: 3px solid var(--text-primary);
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+
+        .marker-other-stop {
+            background: var(--text-muted);
+            border: 2px solid var(--text-primary);
+            border-radius: 50%;
+            width: 10px;
+            height: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .marker-other-stop:hover {
+            transform: scale(1.3);
+            background: var(--gold);
+        }
+
+        .marker-bus {
+            background: var(--gold);
+            border: 2px solid var(--bg-primary);
+            border-radius: 4px;
+            padding: 3px 6px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--bg-primary);
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            transition: transform 0.5s ease-out;
+        }
+
+        /* Leaflet popup styling */
+        .leaflet-popup-content-wrapper {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 8px;
+            border: 1px solid var(--bg-tertiary);
+        }
+
+        .leaflet-popup-tip {
+            background: var(--bg-secondary);
+        }
+
+        .leaflet-popup-content {
+            margin: 12px 14px;
+            font-family: var(--font-body);
+        }
+
+        .popup-title {
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--gold);
+            margin-bottom: 4px;
+        }
+
+        .popup-detail {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .popup-status {
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        .popup-status.on-time { color: var(--status-good); }
+        .popup-status.delayed { color: var(--status-warn); }
+
+        .popup-btn {
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px;
+            background: var(--cta-green);
+            color: var(--text-primary);
+            border: none;
+            border-radius: 4px;
+            font-family: var(--font-display);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        .popup-btn:hover {
+            background: var(--cta-green-dark);
+        }
+
+        /* ============================================
+           SETTINGS MODAL
+           ============================================ */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-overlay.hidden {
+            display: none;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid var(--bg-tertiary);
+        }
+
+        .modal-header {
+            background: var(--cta-green);
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .modal-title {
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+        }
+
+        .modal-close {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: var(--text-primary);
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .modal-body {
+            padding: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-family: var(--font-display);
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .form-input, .form-select {
+            width: 100%;
+            padding: 12px 14px;
+            border: 2px solid var(--bg-tertiary);
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus, .form-select:focus {
+            border-color: var(--cta-green);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .form-help {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        .form-help a {
+            color: var(--gold);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .btn-save {
+            width: 100%;
+            padding: 14px;
+            background: var(--cta-green);
+            border: none;
+            border-radius: 6px;
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-save:hover {
+            background: var(--cta-green-dark);
+        }
+
+        /* ============================================
+           SETTINGS IN-PAGE
+           ============================================ */
+        .settings-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+
+        .settings-row:last-child {
+            border-bottom: none;
+        }
+
+        .settings-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        /* Toggle switch */
+        .toggle {
+            position: relative;
+            width: 48px;
+            height: 26px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-track {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-tertiary);
+            border-radius: 26px;
+            transition: 0.2s;
+        }
+
+        .toggle-thumb {
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            top: 3px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+
+        .toggle input:checked + .toggle-track {
+            background: var(--cta-green);
+        }
+
+        .toggle input:checked + .toggle-track .toggle-thumb {
+            transform: translateX(22px);
+            background: var(--text-primary);
+        }
+
+        .btn-reset {
+            background: var(--status-bad);
+            color: var(--text-primary);
+            border: none;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        /* ============================================
+           API KEY SECTION
+           ============================================ */
+        .api-section {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 24px 20px;
+            border: 1px solid var(--bg-tertiary);
+        }
+
+        .api-section.hidden {
+            display: none;
+        }
+
+        .api-title {
+            font-family: var(--font-display);
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+
+        .api-input {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--bg-primary);
+            border: 2px solid var(--bg-tertiary);
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        .api-input:focus {
+            border-color: var(--cta-green);
+        }
+
+        .api-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .btn-start {
+            width: 100%;
+            margin-top: 16px;
+            padding: 14px;
+            background: var(--cta-green);
+            border: none;
+            border-radius: 6px;
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+        }
+
+        .btn-start:hover {
+            background: var(--cta-green-dark);
+        }
+
+        .api-help {
+            margin-top: 12px;
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .api-help a {
+            color: var(--gold);
+        }
+
+        /* ============================================
+           REFRESH BUTTON
+           ============================================ */
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            background: var(--status-warn);
+            border: none;
+            border-radius: 50%;
+            color: var(--text-primary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+            z-index: 100;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.95);
+        }
+
+        .refresh-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .refresh-btn.spinning svg {
+            animation: spin 0.7s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ============================================
+           FOOTER
+           ============================================ */
+        .update-footer {
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+            padding: 12px;
+        }
+
+        /* ============================================
+           ERROR STATE
+           ============================================ */
+        .error-msg {
+            background: rgba(196, 77, 36, 0.2);
+            border: 1px solid var(--status-bad);
+            border-radius: 6px;
+            padding: 12px;
+            color: var(--status-bad);
+            font-size: 13px;
+            text-align: center;
+        }
+
+        /* Bus count indicator */
+        .bus-count {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-layout">
+            <!-- INFO COLUMN -->
+            <div class="info-column">
+                <!-- Notification Banner -->
+                <div class="notification-banner" id="notifBanner" style="display: none;">
+                    <span>Enable notifications for bus arrival alerts</span>
+                    <div>
+                        <button onclick="enableNotifications()">Enable</button>
+                        <button class="dismiss" onclick="dismissNotif()">×</button>
+                    </div>
+                </div>
+
+                <!-- Header Sign -->
+                <div class="header-sign">
+                    <div class="route-badge">
+                        <div class="route-number" id="routeNum">151</div>
+                    </div>
+                    <div class="route-info">
+                        <div class="route-name" id="routeName">SHERIDAN</div>
+                        <div class="stop-row">
+                            <span class="direction-badge" id="dirBadge">SOUTHBOUND</span>
+                            <span class="stop-name" id="stopNameDisplay">LAKE SHORE + SCHILLER</span>
+                        </div>
+                    </div>
+                    <button class="settings-btn" onclick="openSettings()" title="Settings">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8l2.8-2.8M17 7l2.8-2.8"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- System Status -->
+                <div class="system-status" id="sysStatus">CHECKING CONNECTION...</div>
+
+                <!-- API Key Section -->
+                <div class="api-section" id="apiSection">
+                    <div class="api-title">Enter CTA API Key</div>
+                    <input type="text" class="api-input" id="apiKey" placeholder="Paste your API key here">
+                    <button class="btn-start" onclick="saveApiKey()">Start Tracking</button>
+                    <div class="api-help">
+                        Get your free key at <a href="https://www.transitchicago.com/developers/" target="_blank">CTA Developer Portal</a>
+                    </div>
+                </div>
+
+                <!-- Main Content -->
+                <div id="mainContent" style="display: none;">
+                    <!-- Countdown Display -->
+                    <div class="countdown-card">
+                        <div class="loading-state" id="loadingState">
+                            <div class="loading-text">LOCATING BUSES</div>
+                        </div>
+
+                        <div id="countdownContent" style="display: none;">
+                            <div class="display-label">NEXT BUS ARRIVES IN</div>
+                            <div class="countdown-row">
+                                <div class="countdown-time" id="countdownTime">--</div>
+                                <div class="countdown-unit" id="countdownUnit">MIN</div>
+                            </div>
+
+                            <div class="status-row">
+                                <div class="status-item">
+                                    <div class="status-light" id="lightOnTime"></div>
+                                    <span class="status-label" id="labelOnTime">ON TIME</span>
+                                </div>
+                                <div class="status-item">
+                                    <div class="status-light" id="lightDelayed"></div>
+                                    <span class="status-label" id="labelDelayed">DELAYED</span>
+                                </div>
+                            </div>
+
+                            <div class="destination-bar">
+                                <span class="dest-label">TO:</span>
+                                <span class="dest-value" id="destValue">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Upcoming Buses -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div class="panel-title">Upcoming Buses</div>
+                        </div>
+                        <div class="panel-body">
+                            <div class="bus-list" id="busList"></div>
+                        </div>
+                    </div>
+
+                    <!-- Map Toggle (Mobile only) -->
+                    <button class="map-toggle" id="mapToggle" onclick="toggleMap()">
+                        Show Live Bus Map
+                    </button>
+
+                    <!-- Settings Panel -->
+                    <div class="panel">
+                        <div class="panel-header">
+                            <div class="panel-title">Settings</div>
+                        </div>
+                        <div class="panel-body">
+                            <div class="settings-row">
+                                <span class="settings-label">Auto-refresh (30 sec)</span>
+                                <label class="toggle">
+                                    <input type="checkbox" id="autoRefresh" checked onchange="toggleAutoRefresh()">
+                                    <div class="toggle-track">
+                                        <div class="toggle-thumb"></div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="settings-row">
+                                <span class="settings-label">Alert at 5 min</span>
+                                <label class="toggle">
+                                    <input type="checkbox" id="notify5" checked>
+                                    <div class="toggle-track">
+                                        <div class="toggle-thumb"></div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="settings-row">
+                                <span class="settings-label">Alert at 2 min</span>
+                                <label class="toggle">
+                                    <input type="checkbox" id="notify2" checked>
+                                    <div class="toggle-track">
+                                        <div class="toggle-thumb"></div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="settings-row">
+                                <span class="settings-label">Reset API Key</span>
+                                <button class="btn-reset" onclick="resetApiKey()">Reset</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="update-footer" id="updateFooter">LAST UPDATED: --</div>
+                </div>
+            </div>
+
+            <!-- MAP COLUMN -->
+            <div class="map-column" id="mapColumn">
+                <div class="map-wrapper" id="mapWrapper">
+                    <div class="map-header">
+                        <div class="map-title">LIVE BUS TRACKING</div>
+                        <div class="map-legend">
+                            <div class="legend-item">
+                                <div class="legend-dot current-stop"></div>
+                                <span>Your Stop</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-dot other-stop"></div>
+                                <span>Other Stops</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-dot bus"></div>
+                                <span>Bus</span>
+                            </div>
+                        </div>
+                        <span class="bus-count" id="busCount">0 buses active</span>
+                    </div>
+                    <div id="map"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Refresh Button -->
+        <button class="refresh-btn" id="refreshBtn" onclick="refreshData()" style="display: none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="23 4 23 10 17 10"></polyline>
+                <polyline points="1 20 1 14 7 14"></polyline>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay hidden" id="settingsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">Stop Configuration</div>
+                <button class="modal-close" onclick="closeSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Route Number</label>
+                    <input type="text" class="form-input" id="inputRoute" placeholder="e.g. 151, 22, 66">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Stop ID</label>
+                    <input type="text" class="form-input" id="inputStopId" placeholder="e.g. 1089">
+                    <div class="form-help">Find your stop ID at <a href="https://www.ctabustracker.com" target="_blank">ctabustracker.com</a> or click a stop on the map</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Stop Name (Display)</label>
+                    <input type="text" class="form-input" id="inputStopName" placeholder="e.g. Lake Shore + Schiller">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Direction</label>
+                        <select class="form-select" id="inputDirection">
+                            <option value="Northbound">Northbound</option>
+                            <option value="Southbound">Southbound</option>
+                            <option value="Eastbound">Eastbound</option>
+                            <option value="Westbound">Westbound</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Route Name</label>
+                        <input type="text" class="form-input" id="inputRouteName" placeholder="e.g. Sheridan">
+                    </div>
+                </div>
+
+                <button class="btn-save" onclick="saveSettings()">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // ============================================
+        // DEFAULT CONFIGURATION
+        // ============================================
+        const DEFAULT_CONFIG = {
+            routeId: '151',
+            routeName: 'SHERIDAN',
+            stopId: '1089',
+            stopName: 'LAKE SHORE + SCHILLER',
+            direction: 'Southbound',
+            stopLat: 41.9075,
+            stopLon: -87.6268
+        };
+
+        // ============================================
+        // STATE
+        // ============================================
+        let config = loadConfig();
+        let apiKey = localStorage.getItem('cta_api_key') || '';
+        let proxyUrl = 'http://localhost:3000';
+
+        let map = null;
+        let mapVisible = window.innerWidth >= 768; // Auto-show on desktop
+        let currentStopMarker = null;
+        let routeLine = null;
+        let busMarkers = {};
+        let stopMarkers = {};
+        let routePattern = null;
+        let allStops = [];
+
+        let predictions = [];
+        let prevPredictions = [];
+        let vehicles = [];
+        let notifiedBuses = new Set();
+
+        let autoRefreshInterval = null;
+        let refreshIntervalMs = 30000;
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            applyConfig();
+            checkServerStatus();
+            handleResponsiveLayout();
+
+            if (apiKey) {
+                document.getElementById('apiKey').value = apiKey;
+            }
+
+            if ('Notification' in window && Notification.permission === 'default') {
+                document.getElementById('notifBanner').style.display = 'flex';
+            }
+
+            window.addEventListener('resize', handleResponsiveLayout);
+        });
+
+        function handleResponsiveLayout() {
+            const mapColumn = document.getElementById('mapColumn');
+            const mapToggle = document.getElementById('mapToggle');
+
+            if (window.innerWidth >= 768) {
+                // Desktop: always show map
+                mapColumn.classList.add('visible');
+                mapToggle.style.display = 'none';
+
+                // Initialize map if needed
+                setTimeout(() => {
+                    if (!map && apiKey) {
+                        initMap();
+                        fetchVehicles();
+                        fetchPattern();
+                    } else if (map) {
+                        map.invalidateSize();
+                    }
+                }, 100);
+            } else {
+                // Mobile: show/hide based on toggle
+                if (!mapVisible) {
+                    mapColumn.classList.remove('visible');
+                }
+                mapToggle.style.display = 'flex';
+            }
+        }
+
+        // ============================================
+        // CONFIG MANAGEMENT
+        // ============================================
+        function loadConfig() {
+            const saved = localStorage.getItem('cta_config');
+            if (saved) {
+                try {
+                    return { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
+                } catch (e) {
+                    return { ...DEFAULT_CONFIG };
+                }
+            }
+            return { ...DEFAULT_CONFIG };
+        }
+
+        function saveConfig(newConfig) {
+            config = { ...config, ...newConfig };
+            localStorage.setItem('cta_config', JSON.stringify(config));
+            applyConfig();
+        }
+
+        function applyConfig() {
+            document.getElementById('routeNum').textContent = config.routeId;
+            document.getElementById('routeName').textContent = config.routeName;
+            document.getElementById('stopNameDisplay').textContent = config.stopName;
+            document.getElementById('dirBadge').textContent = config.direction.toUpperCase();
+
+            // Update modal fields
+            document.getElementById('inputRoute').value = config.routeId;
+            document.getElementById('inputStopId').value = config.stopId;
+            document.getElementById('inputStopName').value = config.stopName;
+            document.getElementById('inputRouteName').value = config.routeName;
+            document.getElementById('inputDirection').value = config.direction;
+        }
+
+        // ============================================
+        // SETTINGS MODAL
+        // ============================================
+        function openSettings() {
+            document.getElementById('settingsModal').classList.remove('hidden');
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.add('hidden');
+        }
+
+        function saveSettings() {
+            const newConfig = {
+                routeId: document.getElementById('inputRoute').value.trim() || config.routeId,
+                stopId: document.getElementById('inputStopId').value.trim() || config.stopId,
+                stopName: document.getElementById('inputStopName').value.trim().toUpperCase() || config.stopName,
+                routeName: document.getElementById('inputRouteName').value.trim().toUpperCase() || config.routeName,
+                direction: document.getElementById('inputDirection').value
+            };
+
+            saveConfig(newConfig);
+            closeSettings();
+
+            // Reset map data for new route
+            resetMapData();
+            refreshData();
+        }
+
+        function resetMapData() {
+            routePattern = null;
+            allStops = [];
+
+            if (map) {
+                if (routeLine) {
+                    map.removeLayer(routeLine);
+                    routeLine = null;
+                }
+
+                Object.values(busMarkers).forEach(m => map.removeLayer(m));
+                busMarkers = {};
+
+                Object.values(stopMarkers).forEach(m => map.removeLayer(m));
+                stopMarkers = {};
+            }
+        }
+
+        // Switch to a different stop (called from map click)
+        function switchToStop(stopId, stopName, lat, lon) {
+            const newConfig = {
+                stopId: stopId,
+                stopName: stopName.toUpperCase(),
+                stopLat: lat,
+                stopLon: lon
+            };
+
+            saveConfig(newConfig);
+
+            // Update current stop marker
+            updateCurrentStopMarker();
+
+            // Refresh predictions for new stop
+            refreshData();
+
+            // Close any open popups
+            map.closePopup();
+        }
+
+        // ============================================
+        // SERVER STATUS
+        // ============================================
+        async function checkServerStatus() {
+            const statusEl = document.getElementById('sysStatus');
+
+            try {
+                const response = await fetch(`${proxyUrl}/health`);
+                const data = await response.json();
+
+                if (data.status === 'ok') {
+                    statusEl.classList.add('online');
+                    statusEl.classList.remove('offline');
+                    statusEl.textContent = 'SYSTEM ONLINE';
+
+                    if (apiKey) {
+                        showMainContent();
+                        refreshData();
+                        startAutoRefresh();
+                    }
+                }
+            } catch (e) {
+                statusEl.classList.add('offline');
+                statusEl.classList.remove('online');
+                statusEl.textContent = 'OFFLINE - Run: node cta-proxy-server.js';
+            }
+        }
+
+        // ============================================
+        // API KEY
+        // ============================================
+        function saveApiKey() {
+            const input = document.getElementById('apiKey');
+            apiKey = input.value.trim();
+
+            if (!apiKey) {
+                input.style.borderColor = 'var(--status-bad)';
+                return;
+            }
+
+            localStorage.setItem('cta_api_key', apiKey);
+            showMainContent();
+            refreshData();
+            startAutoRefresh();
+
+            // Initialize map on desktop
+            if (window.innerWidth >= 768) {
+                setTimeout(() => {
+                    initMap();
+                    fetchVehicles();
+                    fetchPattern();
+                }, 100);
+            }
+        }
+
+        function resetApiKey() {
+            if (confirm('Reset API key?')) {
+                localStorage.removeItem('cta_api_key');
+                apiKey = '';
+                document.getElementById('apiKey').value = '';
+                document.getElementById('apiSection').classList.remove('hidden');
+                document.getElementById('mainContent').style.display = 'none';
+                document.getElementById('refreshBtn').style.display = 'none';
+                stopAutoRefresh();
+            }
+        }
+
+        function showMainContent() {
+            document.getElementById('apiSection').classList.add('hidden');
+            document.getElementById('mainContent').style.display = 'block';
+            document.getElementById('refreshBtn').style.display = 'flex';
+        }
+
+        // ============================================
+        // NOTIFICATIONS
+        // ============================================
+        function enableNotifications() {
+            if ('Notification' in window) {
+                Notification.requestPermission().then(() => {
+                    document.getElementById('notifBanner').style.display = 'none';
+                });
+            }
+        }
+
+        function dismissNotif() {
+            document.getElementById('notifBanner').style.display = 'none';
+        }
+
+        function sendNotification(title, body) {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, { body });
+            }
+        }
+
+        function checkNotifications() {
+            const notify5 = document.getElementById('notify5').checked;
+            const notify2 = document.getElementById('notify2').checked;
+
+            predictions.forEach(pred => {
+                const mins = parseInt(pred.prdctdn) || 0;
+                const key = `${pred.vid}-${pred.prdtm}`;
+
+                if (notify5 && mins === 5 && !notifiedBuses.has(`${key}-5`)) {
+                    sendNotification(`Bus ${config.routeId} - 5 min`, `To ${pred.des}`);
+                    notifiedBuses.add(`${key}-5`);
+                }
+
+                if (notify2 && mins === 2 && !notifiedBuses.has(`${key}-2`)) {
+                    sendNotification(`Bus ${config.routeId} - 2 min`, `To ${pred.des} - GO NOW`);
+                    notifiedBuses.add(`${key}-2`);
+                }
+            });
+        }
+
+        // ============================================
+        // DATA FETCHING
+        // ============================================
+        async function refreshData() {
+            const btn = document.getElementById('refreshBtn');
+            btn.classList.add('spinning');
+
+            try {
+                await fetchPredictions();
+
+                // Always fetch vehicles if map is initialized
+                if (map) {
+                    await fetchVehicles();
+                    if (!routePattern) {
+                        await fetchPattern();
+                    }
+                }
+            } catch (e) {
+                console.error('Error:', e);
+                showError('Connection error - check API key');
+            }
+
+            btn.classList.remove('spinning');
+            updateFooter();
+        }
+
+        async function fetchPredictions() {
+            const url = `${proxyUrl}/api/getpredictions?key=${apiKey}&stpid=${config.stopId}&rt=${config.routeId}&format=json`;
+            const res = await fetch(url);
+            const data = await res.json();
+
+            if (data['bustime-response'].error) {
+                throw new Error(data['bustime-response'].error[0].msg);
+            }
+
+            prevPredictions = [...predictions];
+            predictions = data['bustime-response'].prd || [];
+            updateUI();
+            checkNotifications();
+        }
+
+        async function fetchVehicles() {
+            const url = `${proxyUrl}/api/getvehicles?key=${apiKey}&rt=${config.routeId}&format=json`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data['bustime-response'].error) {
+                    console.warn('Vehicle API error:', data['bustime-response'].error);
+                    return;
+                }
+
+                if (data['bustime-response'].vehicle) {
+                    vehicles = data['bustime-response'].vehicle;
+                    updateBusMarkers();
+
+                    // Update bus count
+                    const dirLower = config.direction.toLowerCase();
+                    const filteredCount = vehicles.filter(v => {
+                        if (!v.rtdir) return true;
+                        return v.rtdir.toLowerCase().includes(dirLower.replace('bound', ''));
+                    }).length;
+
+                    document.getElementById('busCount').textContent = `${filteredCount} buses active`;
+                }
+            } catch (e) {
+                console.error('Vehicle fetch error:', e);
+            }
+        }
+
+        async function fetchPattern() {
+            const url = `${proxyUrl}/api/getpatterns?key=${apiKey}&rt=${config.routeId}&format=json`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data['bustime-response'].error) {
+                    console.warn('Pattern API error:', data['bustime-response'].error);
+                    return;
+                }
+
+                if (data['bustime-response'].ptr) {
+                    const patterns = data['bustime-response'].ptr;
+
+                    // Find matching direction pattern
+                    const dirLower = config.direction.toLowerCase();
+                    let pattern = patterns.find(p =>
+                        p.rtdir && p.rtdir.toLowerCase().includes(dirLower.replace('bound', ''))
+                    );
+
+                    if (!pattern) pattern = patterns[0];
+
+                    if (pattern && pattern.pt) {
+                        routePattern = pattern.pt;
+
+                        // Extract all stops
+                        allStops = pattern.pt.filter(p => p.typ === 'S').map(p => ({
+                            id: p.stpid,
+                            name: p.stpnm,
+                            lat: parseFloat(p.lat),
+                            lon: parseFloat(p.lon)
+                        }));
+
+                        drawRouteLine();
+                        drawAllStops();
+
+                        // Update current stop coordinates if found
+                        const currentStop = allStops.find(s => s.id === config.stopId);
+                        if (currentStop) {
+                            config.stopLat = currentStop.lat;
+                            config.stopLon = currentStop.lon;
+                            updateCurrentStopMarker();
+                            map.setView([currentStop.lat, currentStop.lon], 14);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Pattern fetch error:', e);
+            }
+        }
+
+        // ============================================
+        // UI UPDATE
+        // ============================================
+        function updateUI() {
+            const loadingEl = document.getElementById('loadingState');
+            const contentEl = document.getElementById('countdownContent');
+            const busListEl = document.getElementById('busList');
+
+            loadingEl.style.display = 'none';
+            contentEl.style.display = 'block';
+
+            if (predictions.length === 0) {
+                document.getElementById('countdownTime').textContent = '--';
+                document.getElementById('countdownUnit').textContent = '';
+                document.getElementById('destValue').textContent = 'NO BUSES SCHEDULED';
+                setStatus(false, false);
+                busListEl.innerHTML = '<div class="no-buses">No upcoming buses</div>';
+                return;
+            }
+
+            // Main countdown
+            const next = predictions[0];
+            const mins = parseInt(next.prdctdn) || 0;
+            const timeEl = document.getElementById('countdownTime');
+
+            const oldVal = timeEl.textContent;
+            const newVal = (mins === 0 || next.prdctdn === 'DUE') ? 'DUE' : mins.toString();
+
+            if (oldVal !== newVal) {
+                timeEl.classList.add('updating');
+                setTimeout(() => timeEl.classList.remove('updating'), 250);
+            }
+
+            timeEl.textContent = newVal;
+            document.getElementById('countdownUnit').textContent = (mins === 0 || next.prdctdn === 'DUE') ? 'NOW' : 'MIN';
+            document.getElementById('destValue').textContent = next.des.toUpperCase();
+
+            setStatus(!next.dly, !!next.dly);
+
+            // Bus list - GOLD numbers to match hero
+            busListEl.innerHTML = predictions.map((p, i) => {
+                const isNew = !prevPredictions.find(pp => pp.vid === p.vid);
+                return `
+                    <div class="bus-item ${isNew ? 'updating' : ''}" style="animation-delay: ${i * 0.05}s">
+                        <div class="bus-info">
+                            <div class="bus-destination">${p.des.toUpperCase()}</div>
+                            <div class="bus-meta">
+                                <span class="bus-id">#${p.vid}</span>
+                                ${p.dly ? '<span class="bus-delayed">DELAYED</span>' : ''}
+                            </div>
+                        </div>
+                        <div class="bus-eta">
+                            <div class="eta-value">${p.prdctdn === 'DUE' ? '0' : p.prdctdn}</div>
+                            <div class="eta-unit">${p.prdctdn === 'DUE' ? 'NOW' : 'MIN'}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function setStatus(onTime, delayed) {
+            const lightOn = document.getElementById('lightOnTime');
+            const lightDel = document.getElementById('lightDelayed');
+            const labelOn = document.getElementById('labelOnTime');
+            const labelDel = document.getElementById('labelDelayed');
+
+            lightOn.className = 'status-light ' + (onTime ? 'on-time' : '');
+            lightDel.className = 'status-light ' + (delayed ? 'delayed' : '');
+            labelOn.className = 'status-label ' + (onTime ? 'active' : '');
+            labelDel.className = 'status-label ' + (delayed ? 'active' : '');
+        }
+
+        function showError(msg) {
+            document.getElementById('loadingState').innerHTML =
+                `<div class="error-msg">${msg}</div>`;
+        }
+
+        function updateFooter() {
+            const now = new Date();
+            document.getElementById('updateFooter').textContent =
+                `LAST UPDATED: ${now.toLocaleTimeString()}`;
+        }
+
+        // ============================================
+        // MAP FUNCTIONS
+        // ============================================
+        function toggleMap() {
+            const mapColumn = document.getElementById('mapColumn');
+            const btn = document.getElementById('mapToggle');
+
+            mapVisible = !mapVisible;
+
+            if (mapVisible) {
+                mapColumn.classList.add('visible');
+                btn.classList.add('active');
+                btn.textContent = 'Hide Map';
+
+                setTimeout(() => {
+                    initMap();
+                    fetchVehicles();
+                    fetchPattern();
+                }, 100);
+            } else {
+                mapColumn.classList.remove('visible');
+                btn.classList.remove('active');
+                btn.textContent = 'Show Live Bus Map';
+            }
+        }
+
+        function initMap() {
+            if (map) {
+                map.invalidateSize();
+                return;
+            }
+
+            map = L.map('map', {
+                zoomControl: true
+            }).setView([config.stopLat, config.stopLon], 14);
+
+            // Clean map tiles
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '© OpenStreetMap, © CARTO',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(map);
+
+            updateCurrentStopMarker();
+        }
+
+        function updateCurrentStopMarker() {
+            if (!map) return;
+
+            if (currentStopMarker) {
+                map.removeLayer(currentStopMarker);
+            }
+
+            const icon = L.divIcon({
+                className: '',
+                html: '<div class="marker-current-stop"></div>',
+                iconSize: [18, 18],
+                iconAnchor: [9, 9]
+            });
+
+            currentStopMarker = L.marker([config.stopLat, config.stopLon], { icon, zIndexOffset: 500 })
+                .addTo(map)
+                .bindPopup(`
+                    <div class="popup-title">YOUR STOP</div>
+                    <div class="popup-detail">${config.stopName}</div>
+                    <div class="popup-detail">${config.direction}</div>
+                `);
+        }
+
+        function drawRouteLine() {
+            if (!map || !routePattern) return;
+
+            if (routeLine) {
+                map.removeLayer(routeLine);
+            }
+
+            const latlngs = routePattern
+                .filter(p => p.lat && p.lon)
+                .map(p => [parseFloat(p.lat), parseFloat(p.lon)]);
+
+            if (latlngs.length > 0) {
+                routeLine = L.polyline(latlngs, {
+                    color: '#006747',
+                    weight: 4,
+                    opacity: 0.6
+                }).addTo(map);
+            }
+        }
+
+        function drawAllStops() {
+            if (!map) return;
+
+            // Clear existing stop markers
+            Object.values(stopMarkers).forEach(m => map.removeLayer(m));
+            stopMarkers = {};
+
+            allStops.forEach(stop => {
+                // Skip current stop (we have a special marker for it)
+                if (stop.id === config.stopId) return;
+
+                const icon = L.divIcon({
+                    className: '',
+                    html: '<div class="marker-other-stop"></div>',
+                    iconSize: [10, 10],
+                    iconAnchor: [5, 5]
+                });
+
+                const marker = L.marker([stop.lat, stop.lon], { icon })
+                    .addTo(map)
+                    .bindPopup(`
+                        <div class="popup-title">${stop.name}</div>
+                        <div class="popup-detail">Stop ID: ${stop.id}</div>
+                        <button class="popup-btn" onclick="switchToStop('${stop.id}', '${stop.name.replace(/'/g, "\\'")}', ${stop.lat}, ${stop.lon})">
+                            Switch to This Stop
+                        </button>
+                    `);
+
+                stopMarkers[stop.id] = marker;
+            });
+        }
+
+        function updateBusMarkers() {
+            if (!map) return;
+
+            // Track which buses we've updated
+            const updatedVids = new Set();
+
+            // Filter buses for current direction
+            const dirLower = config.direction.toLowerCase();
+            const filteredBuses = vehicles.filter(v => {
+                if (!v.rtdir) return true; // Include if no direction info
+                const busDir = v.rtdir.toLowerCase();
+                return busDir.includes(dirLower.replace('bound', ''));
+            });
+
+            filteredBuses.forEach(v => {
+                const lat = parseFloat(v.lat);
+                const lon = parseFloat(v.lon);
+                const vid = v.vid;
+
+                if (isNaN(lat) || isNaN(lon)) return;
+
+                updatedVids.add(vid);
+
+                if (busMarkers[vid]) {
+                    // Animate existing marker to new position
+                    const marker = busMarkers[vid];
+                    const oldLatLng = marker.getLatLng();
+                    const newLatLng = L.latLng(lat, lon);
+
+                    // Smooth animation
+                    animateMarker(marker, oldLatLng, newLatLng, 800);
+
+                    // Update popup content
+                    marker.setPopupContent(`
+                        <div class="popup-title">BUS #${vid}</div>
+                        <div class="popup-detail">To: ${v.des}</div>
+                        <div class="popup-status ${v.dly ? 'delayed' : 'on-time'}">
+                            ${v.dly ? 'DELAYED' : 'ON TIME'}
+                        </div>
+                    `);
+                } else {
+                    // Create new marker
+                    const icon = L.divIcon({
+                        className: '',
+                        html: `<div class="marker-bus">#${vid}</div>`,
+                        iconSize: [50, 20],
+                        iconAnchor: [25, 10]
+                    });
+
+                    const marker = L.marker([lat, lon], {
+                        icon,
+                        zIndexOffset: 1000
+                    }).addTo(map);
+
+                    marker.bindPopup(`
+                        <div class="popup-title">BUS #${vid}</div>
+                        <div class="popup-detail">To: ${v.des}</div>
+                        <div class="popup-status ${v.dly ? 'delayed' : 'on-time'}">
+                            ${v.dly ? 'DELAYED' : 'ON TIME'}
+                        </div>
+                    `);
+
+                    busMarkers[vid] = marker;
+                }
+            });
+
+            // Remove markers for buses no longer in data
+            Object.keys(busMarkers).forEach(vid => {
+                if (!updatedVids.has(vid)) {
+                    map.removeLayer(busMarkers[vid]);
+                    delete busMarkers[vid];
+                }
+            });
+        }
+
+        function animateMarker(marker, from, to, duration) {
+            const start = Date.now();
+
+            function animate() {
+                const elapsed = Date.now() - start;
+                const progress = Math.min(elapsed / duration, 1);
+
+                // Ease out quad
+                const eased = 1 - (1 - progress) * (1 - progress);
+
+                const lat = from.lat + (to.lat - from.lat) * eased;
+                const lng = from.lng + (to.lng - from.lng) * eased;
+
+                marker.setLatLng([lat, lng]);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                }
+            }
+
+            animate();
+        }
+
+        // ============================================
+        // AUTO REFRESH
+        // ============================================
+        function startAutoRefresh() {
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            autoRefreshInterval = setInterval(refreshData, refreshIntervalMs);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        function toggleAutoRefresh() {
+            if (document.getElementById('autoRefresh').checked) {
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        }
+
+        // Close modal on outside click
+        document.getElementById('settingsModal').addEventListener('click', (e) => {
+            if (e.target.id === 'settingsModal') {
+                closeSettings();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1231,10 +1231,6 @@
                                     </div>
                                 </label>
                             </div>
-                            <div class="settings-row">
-                                <span class="settings-label">Reset API Key</span>
-                                <button class="btn-reset" onclick="resetApiKey()">Reset</button>
-                            </div>
                         </div>
                     </div>
 
@@ -1328,6 +1324,13 @@
 
     <script>
         // ============================================
+        // API CONFIGURATION (Hardcoded - no user input needed)
+        // ============================================
+        const API_KEY = '7T2uaqTXPEmgNMtxzpykHH4Np';
+        const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+        const CTA_BASE_URL = 'http://www.ctabustracker.com/bustime/api/v2/';
+
+        // ============================================
         // DEFAULT CONFIGURATION
         // ============================================
         const DEFAULT_CONFIG = {
@@ -1344,8 +1347,6 @@
         // STATE
         // ============================================
         let config = loadConfig();
-        let apiKey = localStorage.getItem('cta_api_key') || '';
-        let proxyUrl = 'http://localhost:3000';
 
         let map = null;
         let mapVisible = window.innerWidth >= 768; // Auto-show on desktop
@@ -1365,16 +1366,137 @@
         let refreshIntervalMs = 30000;
 
         // ============================================
+        // ERROR HANDLING HELPER
+        // ============================================
+        function displayError(message, details = null) {
+            const statusEl = document.getElementById('sysStatus');
+            statusEl.classList.add('offline');
+            statusEl.classList.remove('online');
+            statusEl.textContent = message;
+
+            // Log detailed error to console
+            console.error('CTA API Error:', message);
+            if (details) {
+                console.error('Error details:', details);
+            }
+        }
+
+        function displaySuccess(message = 'LIVE DATA') {
+            const statusEl = document.getElementById('sysStatus');
+            statusEl.classList.add('online');
+            statusEl.classList.remove('offline');
+            statusEl.textContent = message;
+        }
+
+        function getErrorMessage(error, response = null) {
+            // Check for specific error types
+            if (!navigator.onLine) {
+                return 'No internet connection';
+            }
+
+            if (response) {
+                if (response.status === 401 || response.status === 403) {
+                    return 'API key invalid or expired';
+                }
+                if (response.status === 404) {
+                    return 'Route or stop not found';
+                }
+                if (response.status === 408 || response.status === 504) {
+                    return 'Request timed out - CTA API may be slow';
+                }
+                if (response.status >= 500) {
+                    return `CTA API error (${response.status})`;
+                }
+            }
+
+            if (error.name === 'AbortError') {
+                return 'Request timed out - CTA API may be slow';
+            }
+
+            if (error.message) {
+                return `Connection failed: ${error.message}`;
+            }
+
+            return 'Connection error - please try again';
+        }
+
+        // ============================================
+        // CTA API FETCH HELPER (with CORS proxy)
+        // ============================================
+        async function ctaFetch(endpoint, params = {}) {
+            // Build the CTA API URL
+            const queryString = new URLSearchParams({
+                key: API_KEY,
+                format: 'json',
+                ...params
+            }).toString();
+
+            const ctaUrl = `${CTA_BASE_URL}${endpoint}?${queryString}`;
+            const proxyUrl = `${CORS_PROXY}${encodeURIComponent(ctaUrl)}`;
+
+            console.log(`Fetching: ${endpoint}`, params);
+
+            // Create abort controller for timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+            try {
+                const response = await fetch(proxyUrl, {
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    const errorMsg = getErrorMessage(null, response);
+                    console.error(`HTTP error for ${endpoint}:`, response.status, response.statusText);
+                    throw new Error(errorMsg);
+                }
+
+                const data = await response.json();
+
+                // Check for CTA API-level errors
+                if (data['bustime-response'] && data['bustime-response'].error) {
+                    const ctaError = data['bustime-response'].error[0];
+                    console.error(`CTA API error for ${endpoint}:`, ctaError);
+                    throw new Error(ctaError.msg || 'CTA API returned an error');
+                }
+
+                return data;
+            } catch (error) {
+                clearTimeout(timeoutId);
+
+                const errorMsg = getErrorMessage(error);
+                console.error(`Fetch error for ${endpoint}:`, {
+                    error: error,
+                    url: ctaUrl,
+                    proxyUrl: proxyUrl
+                });
+
+                throw new Error(errorMsg);
+            }
+        }
+
+        // ============================================
         // INITIALIZATION
         // ============================================
         document.addEventListener('DOMContentLoaded', () => {
             applyConfig();
-            checkServerStatus();
-            handleResponsiveLayout();
 
-            if (apiKey) {
-                document.getElementById('apiKey').value = apiKey;
+            // Hide API key section since we're using hardcoded key
+            const apiSection = document.getElementById('apiSection');
+            if (apiSection) {
+                apiSection.style.display = 'none';
             }
+
+            // Show main content immediately
+            showMainContent();
+            displaySuccess('CONNECTING...');
+
+            // Start fetching data
+            refreshData();
+            startAutoRefresh();
+            handleResponsiveLayout();
 
             if ('Notification' in window && Notification.permission === 'default') {
                 document.getElementById('notifBanner').style.display = 'flex';
@@ -1394,11 +1516,9 @@
 
                 // Initialize map if needed
                 setTimeout(() => {
-                    if (!map && apiKey) {
+                    if (!map) {
                         initMap();
-                        fetchVehicles();
-                        fetchPattern();
-                    } else if (map) {
+                    } else {
                         map.invalidateSize();
                     }
                 }, 100);
@@ -1514,71 +1634,8 @@
         }
 
         // ============================================
-        // SERVER STATUS
+        // (API KEY is now hardcoded - no user input needed)
         // ============================================
-        async function checkServerStatus() {
-            const statusEl = document.getElementById('sysStatus');
-
-            try {
-                const response = await fetch(`${proxyUrl}/health`);
-                const data = await response.json();
-
-                if (data.status === 'ok') {
-                    statusEl.classList.add('online');
-                    statusEl.classList.remove('offline');
-                    statusEl.textContent = 'SYSTEM ONLINE';
-
-                    if (apiKey) {
-                        showMainContent();
-                        refreshData();
-                        startAutoRefresh();
-                    }
-                }
-            } catch (e) {
-                statusEl.classList.add('offline');
-                statusEl.classList.remove('online');
-                statusEl.textContent = 'OFFLINE - Run: node cta-proxy-server.js';
-            }
-        }
-
-        // ============================================
-        // API KEY
-        // ============================================
-        function saveApiKey() {
-            const input = document.getElementById('apiKey');
-            apiKey = input.value.trim();
-
-            if (!apiKey) {
-                input.style.borderColor = 'var(--status-bad)';
-                return;
-            }
-
-            localStorage.setItem('cta_api_key', apiKey);
-            showMainContent();
-            refreshData();
-            startAutoRefresh();
-
-            // Initialize map on desktop
-            if (window.innerWidth >= 768) {
-                setTimeout(() => {
-                    initMap();
-                    fetchVehicles();
-                    fetchPattern();
-                }, 100);
-            }
-        }
-
-        function resetApiKey() {
-            if (confirm('Reset API key?')) {
-                localStorage.removeItem('cta_api_key');
-                apiKey = '';
-                document.getElementById('apiKey').value = '';
-                document.getElementById('apiSection').classList.remove('hidden');
-                document.getElementById('mainContent').style.display = 'none';
-                document.getElementById('refreshBtn').style.display = 'none';
-                stopAutoRefresh();
-            }
-        }
 
         function showMainContent() {
             document.getElementById('apiSection').classList.add('hidden');
@@ -1628,7 +1685,7 @@
         }
 
         // ============================================
-        // DATA FETCHING
+        // DATA FETCHING (using CORS proxy)
         // ============================================
         async function refreshData() {
             const btn = document.getElementById('refreshBtn');
@@ -1636,6 +1693,7 @@
 
             try {
                 await fetchPredictions();
+                displaySuccess('LIVE DATA');
 
                 // Always fetch vehicles if map is initialized
                 if (map) {
@@ -1645,8 +1703,9 @@
                     }
                 }
             } catch (e) {
-                console.error('Error:', e);
-                showError('Connection error - check API key');
+                console.error('Refresh error:', e);
+                displayError(e.message || 'Connection error');
+                showError(e.message || 'Connection error');
             }
 
             btn.classList.remove('spinning');
@@ -1654,13 +1713,10 @@
         }
 
         async function fetchPredictions() {
-            const url = `${proxyUrl}/api/getpredictions?key=${apiKey}&stpid=${config.stopId}&rt=${config.routeId}&format=json`;
-            const res = await fetch(url);
-            const data = await res.json();
-
-            if (data['bustime-response'].error) {
-                throw new Error(data['bustime-response'].error[0].msg);
-            }
+            const data = await ctaFetch('getpredictions', {
+                stpid: config.stopId,
+                rt: config.routeId
+            });
 
             prevPredictions = [...predictions];
             predictions = data['bustime-response'].prd || [];
@@ -1669,11 +1725,10 @@
         }
 
         async function fetchVehicles() {
-            const url = `${proxyUrl}/api/getvehicles?key=${apiKey}&rt=${config.routeId}&format=json`;
-
             try {
-                const res = await fetch(url);
-                const data = await res.json();
+                const data = await ctaFetch('getvehicles', {
+                    rt: config.routeId
+                });
 
                 if (data['bustime-response'].error) {
                     console.warn('Vehicle API error:', data['bustime-response'].error);
@@ -1699,16 +1754,10 @@
         }
 
         async function fetchPattern() {
-            const url = `${proxyUrl}/api/getpatterns?key=${apiKey}&rt=${config.routeId}&format=json`;
-
             try {
-                const res = await fetch(url);
-                const data = await res.json();
-
-                if (data['bustime-response'].error) {
-                    console.warn('Pattern API error:', data['bustime-response'].error);
-                    return;
-                }
+                const data = await ctaFetch('getpatterns', {
+                    rt: config.routeId
+                });
 
                 if (data['bustime-response'].ptr) {
                     const patterns = data['bustime-response'].ptr;
